@@ -13,8 +13,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/usareur-af/goatcore/ops/goat-id-console/internal/kratos"
 	"github.com/usareur-af/goatcore/ops/goat-id-console/internal/onboardstore"
 )
 
@@ -349,5 +351,132 @@ func TestHumanRealm_SponsorMintAndDecide(t *testing.T) {
 	}
 	if w := post("/onboarding/p-own/sponsor-approve", url.Values{}); w.Code != http.StatusSeeOther {
 		t.Fatalf("sponsor own vouch = %d, want 303 redirect; %s", w.Code, w.Body.String())
+	}
+}
+
+// Human realm: the welcome package and the key follow-ups are admin-only. A
+// sponsor session is refused on its own invitee and on a foreign one, no
+// recovery link is minted, and the stored keys are unchanged.
+func TestHumanRealm_SponsorRefusedWelcomeAndKeyActions(t *testing.T) {
+	s := newOnboardTestServer(t)
+	s.Cfg.DevBypassAuth = false
+	portalURL, _ := fakeSponsorPortal(t, nil, map[string]sponsorLookupResponse{
+		"sponsora@example.org": {Org: "0ff404dd", Alias: "pat-example", SponsorAuthorized: true, SponsorMaxTier: "developer"},
+	})
+	s.Cfg.PortalInternalURL = portalURL
+	s.Cfg.PortalLookupToken = "svc-token"
+	var identityCalls atomic.Int32
+	identity := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		identityCalls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer identity.Close()
+	s.Kratos = map[string]*kratos.Client{"tenant": kratos.NewClient(identity.URL)}
+	h := s.Routes()
+
+	ctx := context.Background()
+	for _, id := range []string{"p-own", "p-foreign"} {
+		sponsor := "sponsora@example.org"
+		if id == "p-foreign" {
+			sponsor = "someone-else"
+		}
+		seedProposal(t, s, id, sponsor, "developer", onboardstore.ProposalOnboarded)
+		if err := s.Onboard.SetProposalResult(ctx, id, onboardstore.ProposalOnboarded, "stored-setup-key", "stored-handset-key", "/bundles/"+id, "", "", false); err != nil {
+			t.Fatalf("seed keys %s: %v", id, err)
+		}
+	}
+
+	do := func(method, path, email, groups string, csrf bool) *httptest.ResponseRecorder {
+		form := url.Values{"setup_key": {"caller-chosen-key"}, "handset_key": {"caller-chosen-handset"}, "uses": {"1"}}
+		if csrf {
+			form.Set("csrf", s.csrfNonce)
+		}
+		r := httptest.NewRequestWithContext(ctx, method, path, strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("X-Forwarded-Email", email)
+		r.Header.Set("X-Forwarded-Groups", groups)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	sponsorDo := func(method, path string) *httptest.ResponseRecorder {
+		return do(method, path, "sponsora@example.org", "DEVELOPER,OBSERVER", true)
+	}
+
+	for _, id := range []string{"p-own", "p-foreign"} {
+		for _, c := range []struct{ method, path string }{
+			{http.MethodGet, "/onboarding/" + id + "/welcome"},
+			{http.MethodPost, "/onboarding/" + id + "/welcome/resend"},
+			{http.MethodPost, "/onboarding/" + id + "/handset-key/reissue"},
+			{http.MethodPost, "/onboarding/" + id + "/device-key/reissue"},
+		} {
+			w := sponsorDo(c.method, c.path)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("sponsor %s %s = %d, want 403; %s", c.method, c.path, w.Code, w.Body.String())
+			}
+			if strings.Contains(w.Body.String(), "stored-setup-key") {
+				t.Fatalf("sponsor %s %s leaked the setup key", c.method, c.path)
+			}
+		}
+		p, err := s.Onboard.GetProposal(ctx, id)
+		if err != nil {
+			t.Fatalf("reload %s: %v", id, err)
+		}
+		if p.SetupKey != "stored-setup-key" || p.HandsetKey != "stored-handset-key" {
+			t.Fatalf("%s keys changed by a sponsor session: %q / %q", id, p.SetupKey, p.HandsetKey)
+		}
+		acts, err := s.Onboard.ListActionsForProposal(ctx, id)
+		if err != nil || len(acts) != 0 {
+			t.Fatalf("%s follow-ups queued by a sponsor session: %v (%v)", id, acts, err)
+		}
+	}
+	if n := identityCalls.Load(); n != 0 {
+		t.Fatalf("sponsor session reached the identity provider %d times, want 0", n)
+	}
+
+	// The sponsor's own card carries no credential fields.
+	w := sponsorDo(http.MethodGet, "/onboarding?status=onboarded&id=p-own")
+	if w.Code != http.StatusOK {
+		t.Fatalf("sponsor own card = %d; %s", w.Code, w.Body.String())
+	}
+	for _, leaked := range []string{"stored-setup-key", "stored-handset-key", "/bundles/p-own", "/onboarding/p-own/welcome"} {
+		if strings.Contains(w.Body.String(), leaked) {
+			t.Fatalf("sponsor card contains %q", leaked)
+		}
+	}
+
+	// A duplicate-email refusal names the record only to its own sponsor.
+	mint := func(email string) string {
+		form := url.Values{"csrf": {s.csrfNonce}, "env": {"zagros"}, "tier": {"developer"}, "candidate_email": {email}}
+		r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/onboarding/invite", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set("X-Forwarded-Email", "sponsora@example.org")
+		r.Header.Set("X-Forwarded-Groups", "DEVELOPER,OBSERVER")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("duplicate mint for %s = %d, want 409; %s", email, w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+	if body := mint("p-foreign@example.org"); strings.Contains(body, "proposal p-foreign") || strings.Contains(body, "stage ") {
+		t.Fatalf("foreign duplicate refusal names the record: %s", body)
+	}
+	if body := mint("p-own@example.org"); !strings.Contains(body, "proposal p-own") {
+		t.Fatalf("own duplicate refusal should name the record: %s", body)
+	}
+
+	// Admin sessions keep both routes; resend now needs the CSRF token.
+	if w := do(http.MethodPost, "/onboarding/p-foreign/welcome/resend", "admin@example.org", "ADMINS", false); w.Code != http.StatusForbidden {
+		t.Fatalf("admin resend without csrf = %d, want 403", w.Code)
+	}
+	if p, _ := s.Onboard.GetProposal(ctx, "p-foreign"); p.SetupKey != "stored-setup-key" {
+		t.Fatalf("resend without csrf changed the setup key to %q", p.SetupKey)
+	}
+	if w := do(http.MethodGet, "/onboarding/p-foreign/welcome", "admin@example.org", "ADMINS", true); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "stored-setup-key") {
+		t.Fatalf("admin download = %d; %s", w.Code, w.Body.String())
+	}
+	if identityCalls.Load() == 0 {
+		t.Fatal("admin download should attempt the recovery link")
 	}
 }

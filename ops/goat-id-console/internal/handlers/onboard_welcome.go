@@ -160,11 +160,16 @@ func containsFold(xs []string, want string) bool {
 
 // handleWelcomeDownload serves the generated welcome package for an onboarded
 // proposal as a plaintext attachment — the deliverable an operator hands the
-// enrollee when email is unavailable. Admin-gated (onboardGate). Mints a fresh
+// enrollee when email is unavailable. Admin sessions only: onboardGate also
+// admits sponsor sessions (ADR 1072), which are refused here. Mints a fresh
 // login recovery link best-effort so the package is complete end to end.
 func (s *Server) handleWelcomeDownload(w http.ResponseWriter, r *http.Request) {
 	if s.Onboard == nil {
 		s.renderError(w, r, 503, "onboarding is not configured")
+		return
+	}
+	if sponsorFromCtx(r.Context()) != nil {
+		s.renderError(w, r, 403, "the welcome package is an admin hand-over; sponsors approve or decline their own invitees at the sponsor stage")
 		return
 	}
 	id := r.PathValue("id")
@@ -214,10 +219,19 @@ func (s *Server) handleWelcomeDownload(w http.ResponseWriter, r *http.Request) {
 //
 // An optional `setup_key` form/JSON field supplies a key the console never
 // learned (e.g. minted outside the runner writeback); it is persisted so the
-// stored proposal and the delivered package agree from then on. Admin-gated.
+// stored proposal and the delivered package agree from then on. Admin sessions
+// only: onboardGate also admits sponsor sessions (ADR 1072), refused here.
 func (s *Server) handleWelcomeResend(w http.ResponseWriter, r *http.Request) {
 	if s.Onboard == nil {
 		s.renderError(w, r, 503, "onboarding is not configured")
+		return
+	}
+	if err := s.validateCSRF(r); err != nil {
+		s.renderError(w, r, http.StatusForbidden, err.Error())
+		return
+	}
+	if sponsorFromCtx(r.Context()) != nil {
+		s.renderError(w, r, 403, "re-sending the welcome package is an admin action; sponsors approve or decline their own invitees at the sponsor stage")
 		return
 	}
 	id := r.PathValue("id")

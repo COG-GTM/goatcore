@@ -87,6 +87,10 @@ func (s *Server) queueFollowUp(w http.ResponseWriter, r *http.Request, kind, par
 		s.renderError(w, r, http.StatusForbidden, err.Error())
 		return
 	}
+	if sponsorFromCtx(r.Context()) != nil {
+		s.renderError(w, r, 403, "reissuing a key is an admin action; sponsors approve or decline their own invitees at the sponsor stage")
+		return
+	}
 	id := r.PathValue("id")
 	actor := actorFromCtx(r.Context())
 	a, err := s.Onboard.EnqueueActionWithParams(r.Context(), id, kind, actor.Email, params)

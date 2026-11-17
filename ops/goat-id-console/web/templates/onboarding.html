@@ -598,6 +598,7 @@
       {{else if eq $p.Status "onboarded"}}
         <h3>Onboarded · Hand Over the Welcome Package</h3>
         {{template "devices_block" $p}}
+        {{if not $.SponsorMode}}
         <p class="ob-note">Provisioned{{if $p.DecidedBy}} · decided by {{$p.DecidedBy}}{{end}}. The welcome package is one complete, tier-correct hand-over: mesh join key, login link, CLI, surfaces, and publish path · use it when email delivery is unavailable.</p>
         <div class="ob-actions">
           <a class="btn primary" href="/onboarding/{{$p.ID}}/welcome">Download Welcome Package</a>
@@ -607,6 +608,9 @@
           </form>
         </div>
         {{template "device_key_form" (dict "ID" $p.ID "Handle" $p.Handle "CSRFToken" $.CSRFToken)}}
+        {{else}}
+        <p class="ob-note">Provisioned{{if $p.DecidedBy}} · decided by {{$p.DecidedBy}}{{end}}. An administrator hands over the welcome package and reissues keys.</p>
+        {{end}}
         {{if $p.GitHubPostMint}}{{template "github_form" (dict "ID" $p.ID "Handle" $p.Handle "GitHub" $p.GitHub "CSRFToken" $.CSRFToken)}}{{end}}
         {{/* Its own block, NOT a member of .ob-actions: that row is a flex
              container, and a multi-line form inside it stretches every
@@ -618,6 +622,7 @@
         <h3>Enrolled</h3>
         {{template "devices_block" $p}}
         <p class="ob-note">This person has enrolled at least once with the mesh credential minted for them. Offboard records their exit and frees the email for a future enrolment; it does not itself cut access.</p>
+        {{if not $.SponsorMode}}
         <p class="ob-note">Key expired or used up? Reissue a device key with the number of enrolments they need; devices already on the goatnet stay on. The welcome package is re-sent with the new key.</p>
         <div class="ob-actions">
           <form method="post" action="/onboarding/{{$p.ID}}/handset-key/reissue" onsubmit="if (!confirm('Reissue the handset key for {{$p.Handle}}? The runner revokes every current handset key (a phone or tablet still using one drops off the goatnet), mints a fresh OBSERVER-only key, and re-sends the welcome package with it. Laptops and their key are untouched.')) return false; this.querySelector('button[type=submit]').disabled=true; return true;">
@@ -626,6 +631,7 @@
           </form>
         </div>
         {{template "device_key_form" (dict "ID" $p.ID "Handle" $p.Handle "CSRFToken" $.CSRFToken)}}
+        {{end}}
         {{if $p.GitHubPostMint}}{{template "github_form" (dict "ID" $p.ID "Handle" $p.Handle "GitHub" $p.GitHub "CSRFToken" $.CSRFToken)}}{{end}}
         {{template "offboard_form" (dict "ID" $p.ID "Handle" $p.Handle "Env" $p.Env "CSRFToken" $.CSRFToken "Required" false "ConfirmLead" "Mark this onboarding record offboarded? " "Button" "Mark offboarded")}}
         {{template "offboard_cut_form" (dict "ID" $p.ID "Handle" $p.Handle "Env" $p.Env "CSRFToken" $.CSRFToken "ConfirmTail" "Reversible: a returning person is a re-onboard.")}}
