@@ -696,6 +696,10 @@ func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
 			if f := restoreFlash(flashCode, *p); f != nil {
 				vars.Flashes = flashes(f)
 			}
+			if sponsorKeys != nil {
+				// A sponsor session never receives the enrollee's credentials.
+				p.SetupKey, p.HandsetKey, p.BundlePath = "", "", ""
+			}
 			b, err := json.Marshal(p)          // the FULL store row (manifest_json/petitions/…) for the card
 			_ = err                            // store rows are JSON-marshalable by construction; encode failures are not expected
 			vars.ProposalJSON = template.JS(b) //nolint:gosec // store-sourced, HTML-escaped by the card via textContent

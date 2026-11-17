@@ -523,7 +523,9 @@ mesh-enrolled person, where it is not a degradation but a dead end.
    unaffected and still send immediately. A malformed manifest sends rather than
    holds, so a parse failure can't wedge delivery on something invisible.
 2. **A resend path.** `POST /onboarding/{id}/welcome/resend` (onboardGate,
-   four-segment route so it stays distinct from the `{action}` decide route)
+   four-segment route so it stays distinct from the `{action}` decide route;
+   admin sessions only, CSRF-checked — a sponsor session is refused, as it is
+   on the welcome download and the key reissue routes; built)
    re-renders and mails the package via `welcome.RenderReissue`. An optional
    `setup_key` field supplies a key the console never learned and **persists** it,
    so the stored proposal and every later render agree. It refuses (409) for a

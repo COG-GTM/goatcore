@@ -37,6 +37,23 @@ func (s *Server) checkInviteRecipient(r *http.Request, email string) *inviteReci
 	if p.Status == onboardstore.ProposalArchived {
 		recovery = "ask an admin to restore the existing archived record"
 	}
+	if !callerMaySeeProposal(r, p.Sponsor) {
+		return &inviteRecipientRefusal{http.StatusConflict, "duplicate_email",
+			"an onboarding already exists for this email; ask an admin about the existing record"}
+	}
 	return &inviteRecipientRefusal{http.StatusConflict, "duplicate_email",
 		fmt.Sprintf("an onboarding already exists (proposal %s, stage %s); %s", p.ID, p.Status, recovery)}
+}
+
+// callerMaySeeProposal reports whether a refusal may name a record carrying
+// this sponsor value: admins and operators always, a scoped sponsor (ADR 1072)
+// only for their own invitees.
+func callerMaySeeProposal(r *http.Request, sponsor string) bool {
+	if sp := sponsorFromCtx(r.Context()); sp != nil {
+		return sponsorAllows(sp.keys(), sponsor)
+	}
+	if p, ok := r.Context().Value(ctxKeyOnboardPrincipal).(onboardPrincipal); ok {
+		return p.allowsSponsor(sponsor)
+	}
+	return true
 }
