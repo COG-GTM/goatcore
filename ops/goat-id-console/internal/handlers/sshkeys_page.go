@@ -110,6 +110,10 @@ func (s *Server) handleSSHKeysQueue(w http.ResponseWriter, r *http.Request) {
 
 // handleSSHKeyDecision is the queue's approve / reject / revoke buttons.
 func (s *Server) handleSSHKeyDecision(w http.ResponseWriter, r *http.Request) {
+	if sponsorFromCtx(r.Context()) != nil {
+		s.renderError(w, r, http.StatusForbidden, "ssh key decisions require an ADMINS session")
+		return
+	}
 	if err := s.validateCSRF(r); err != nil {
 		s.renderError(w, r, http.StatusForbidden, err.Error())
 		return
@@ -200,6 +204,12 @@ func (s *Server) renderSSHKeySelf(w http.ResponseWriter, r *http.Request, f *fla
 }
 
 func (s *Server) renderSSHKeyQueue(w http.ResponseWriter, r *http.Request, f *flash) {
+	// The routes take adminGate; this refusal keeps the queue admin-only even
+	// if a route is ever re-registered behind the sponsor-admitting gate.
+	if sponsorFromCtx(r.Context()) != nil {
+		s.renderError(w, r, http.StatusForbidden, "the ssh key queue requires an ADMINS session")
+		return
+	}
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	if status == "" {
 		status = onboardstore.SSHKeySubmitted
@@ -237,7 +247,7 @@ func (s *Server) renderSSHKeyQueue(w http.ResponseWriter, r *http.Request, f *fl
 	installEnvCmd := "'" + strings.ReplaceAll(installEnv, "'", "'\\''") + "'"
 	installPanel := false
 	installHint := false
-	// Panel gate: admins only (onboardGate already admitted them), goatnet
+	// Panel gate: admins only (adminGate already admitted them), goatnet
 	// known, and the signed-in email carrying at least one installed key for
 	// this goatnet. Sponsors see neither panel nor hint. Every other admin —
 	// including one on a console with no NOTIFY_GOATNET configured, where the

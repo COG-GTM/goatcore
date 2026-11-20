@@ -404,8 +404,11 @@ func (s *Server) Routes() http.Handler {
 	// in the store; the gate is just the outer wall.
 	mux.HandleFunc("GET /onboarding/operator-keys", s.adminGate(s.handleOperatorKeysQueue))
 	mux.HandleFunc("POST /operator-keys/{id}/{action}", s.adminGate(s.handleOperatorKeyDecision))
-	mux.HandleFunc("GET /onboarding/ssh-keys", s.onboardGate(s.handleSSHKeysQueue))
-	mux.HandleFunc("POST /ssh-keys/{id}/{action}", s.onboardGate(s.handleSSHKeyDecision))
+	// The SSH-key queue + decisions are ADMIN-ONLY for the same reason:
+	// approval is the only control between a submitted public key and a host
+	// shell, so the sponsors onboardGate admits must not reach it.
+	mux.HandleFunc("GET /onboarding/ssh-keys", s.adminGate(s.handleSSHKeysQueue))
+	mux.HandleFunc("POST /ssh-keys/{id}/{action}", s.adminGate(s.handleSSHKeyDecision))
 	mux.HandleFunc("GET /api/onboard/operator-keys", m(s.apiListOperatorKeys))
 	mux.HandleFunc("POST /api/onboard/operator-keys", m(s.apiRequestOperatorKey))
 	mux.HandleFunc("GET /api/onboard/operator-keys/{id}/collect", m(s.apiCollectOperatorKey))

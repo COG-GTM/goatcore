@@ -272,8 +272,8 @@ signal this feature exists to remove. The raw value is never echoed.
 | what | where |
 |---|---|
 | submit your own key | `GET/POST /ssh-key` |
-| approval queue | `GET /onboarding/ssh-keys` (sponsor-gated, not admin-gated — see the door note below) |
-| decisions | `POST /ssh-keys/{id}/{action}` |
+| approval queue | `GET /onboarding/ssh-keys` (admin-gated: `adminGate`, so a sponsor session gets 403) |
+| decisions | `POST /ssh-keys/{id}/{action}` (admin-gated, as the queue) |
 | machine API | `/api/onboard/ssh-keys[/{id}/approve\|reject\|revoke\|installed\|skip-report]` |
 | store + parser | `ops/goat-id-console/internal/onboardstore/sshkeys.go` |
 | scope resolution | `ops/ansible/tasks/operator-ssh-scope.yml` |
