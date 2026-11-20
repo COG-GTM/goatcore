@@ -143,13 +143,13 @@ func TestIntegration_SSHKeysPanel(t *testing.T) {
 			wantForbidden: false,
 		},
 		{
-			name:          "Sponsor admitted by onboardGate",
+			name:          "Sponsor refused by adminGate",
 			user:          "sponsor-user",
 			email:         "sponsor@example.com",
 			groups:        "VENDORS",
 			wantCommands:  false,
 			wantHint:      false,
-			wantForbidden: false, // Sponsor admitted but doesn't see UI
+			wantForbidden: true, // the queue is admin-only
 		},
 		{
 			name:          "Backfilled admin with no proposal row",
