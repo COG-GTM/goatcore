@@ -156,7 +156,7 @@ recipient, and the mesh leg carries them, not the relays, while the mesh is up.
 
 ## Tracing one message across the pair
 
-Each node logs a `cid` for every message it relays (`relay delivered`, `relay forwarded`, `relay miss`) and for every `Forward` it receives. The same body gets the same `cid` on both nodes, so one grep follows a message from the founder to the joiner. This is **built**: `correlationID` in `signal-server/internal/server/logfields.go`. A body of at most 4 KiB, such as an ICE offer, gets `sha256(body)[:4]`. A longer body, such as a Rosenpass offer, gets `sha256(length ‖ first 4 KiB)[:4]`. While one node runs a build from before this rule and the other runs a build from after it, they log different `cid`s for the same body over 4 KiB, and a grep finds only one side. Bodies of 4 KiB or less match across both builds.
+Each node logs a `cid` for every message it relays (`relay delivered`, `relay forwarded`, `relay miss`) and for every `Forward` it receives. The exception is a message the negative cache sheds: it is counted in `relayShedTotal` but not logged. The same body gets the same `cid` on both nodes, so one grep follows a message from the founder to the joiner. This is **built**: `correlationID` in `signal-server/internal/server/logfields.go`. A body of at most 4 KiB, such as an ICE offer, gets `sha256(body)[:4]`. A longer body, such as a Rosenpass offer, gets `sha256(length as 8 little-endian bytes ‖ first 4 KiB)[:4]`. An empty body gets `no-body`. While one node runs a build from before this rule and the other runs a build from after it, they log different `cid`s for the same body over 4 KiB, and a grep finds only one side. Bodies of 4 KiB or less match across both builds.
 
 ## Turning it off
 
