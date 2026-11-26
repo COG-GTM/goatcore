@@ -26,8 +26,15 @@ func TestCorrelationIDLargeBody(t *testing.T) {
 		body[i] = byte(i * 7)
 	}
 	cid := correlationID(&signalpb.EncryptedMessage{Body: body})
-	if len(cid) != 8 {
-		t.Fatalf("cid %q: want 8 hex chars", cid)
+	h := sha256.New()
+	h.Write([]byte{0x00, 0x00, 0x08, 0, 0, 0, 0, 0}) // 524288 as 8-byte little-endian
+	h.Write(body[:cidPrefixBytes])
+	if want := hex.EncodeToString(h.Sum(nil)[:4]); cid != want {
+		t.Fatalf("cid %q, want sha256(len ‖ body[:%d])[:4] = %q", cid, cidPrefixBytes, want)
+	}
+	whole := sha256.Sum256(body)
+	if cid == hex.EncodeToString(whole[:4]) {
+		t.Fatalf("cid %q equals the whole-body hash; large bodies must hash only the prefix", cid)
 	}
 	if again := correlationID(&signalpb.EncryptedMessage{Body: append([]byte(nil), body...)}); again != cid {
 		t.Errorf("same body gave %q then %q; must be stable across hops", cid, again)
